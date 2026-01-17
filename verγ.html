@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eki-Snap Route</title>
+    <style>
+        body { font-family: "Helvetica Neue", Arial, sans-serif; text-align: center; margin: 0; padding: 20px 10px; background-color: #f0f2f5; color: #333; }
+        h1 { color: #007AFF; font-size: 24px; margin-bottom: 20px; }
+        #initial-selection { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; box-sizing: border-box; display: inline-block; }
+        select { width: 100%; padding: 12px; font-size: 16px; margin: 8px 0; border: 1px solid #ccc; border-radius: 8px; background-color: #fff; appearance: none; }
+        .route-option-group { margin-top: 15px; padding: 15px; background-color: #f9f9f9; border-radius: 10px; text-align: left; }
+        .route-option-group label { display: block; margin: 10px 0; font-size: 16px; cursor: pointer; }
+        #start-btn { width: 100%; padding: 15px; font-size: 18px; font-weight: bold; color: white; background-color: #007AFF; border: none; border-radius: 10px; margin-top: 15px; cursor: pointer; }
+        #guidance-area { margin-top: 10px; padding: 15px; background: white; border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: none; }
+        #image-container { margin: 15px auto; width: 100%; max-width: 400px; border-radius: 15px; overflow: hidden; background-color: #e0e0e0; display: none; justify-content: center; align-items: center; }
+        #route-image { width: 100%; height: 250px; object-fit: contain; background-color: #eee; }
+        #question { font-size: 20px; font-weight: bold; margin: 20px 0; min-height: 40px; line-height: 1.4; }
+        #buttons { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+        .answer-row { display: flex; width: 100%; gap: 10px; justify-content: space-around; }
+        button.answer-btn { flex: 1; padding: 15px; font-size: 18px; font-weight: bold; border: none; border-radius: 10px; cursor: pointer; }
+        button.answer-btn:first-child { background-color: #34C759; color: white; }
+        button.answer-btn:last-child { background-color: #FF3B30; color: white; }
+        /* 評価ボタン専用のスタイル */
+        .form-link-btn { background-color: #FF9500 !important; color: white; width: 100%; text-decoration: none; display: block; padding: 15px; border-radius: 10px; font-weight: bold; font-size: 18px; box-sizing: border-box; }
+        #back-btn, #reset-btn { width: 100%; margin-top: 15px; padding: 12px; font-size: 16px; border: 1px solid #007AFF; background: white; color: #007AFF; border-radius: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Eki-Snap Route <br> ~東武アーバンパークライン~</h1>
+    
+    <div id="initial-selection">
+        <h2>駅、改札を選択してください</h2>
+        <select id="start-station-select"></select>
+        <select id="start-exit-select" disabled></select>
+        <select id="end-station-select"></select>
+        <select id="end-exit-select" disabled></select>
+
+        <div class="route-option-group">
+            <p style="margin:0 0 10px 0;"><strong>利用する手段:</strong></p>
+            <label><input type="radio" name="route_type" value="barrier_free" checked> エレベーター</label>
+            <label><input type="radio" name="route_type" value="escalator"> エスカレーター</label>
+            <label><input type="radio" name="route_type" value="normal"> 階段</label>
+        </div>
+        <button id="start-btn" onclick="startGuidance()">ルート検索</button>
+    </div>
+
+    <div id="guidance-area">
+        <div id="image-container"><img id="route-image" src=""></div>
+        <p id="question"></p>
+        <div id="buttons"></div>
+        <button id="back-btn" onclick="goBack()" style="display: none;">１つ前の質問に戻る</button>
+        <button id="reset-btn" onclick="resetGuidance()" style="display: none;">検索画面に戻る</button>
+    </div>
+
+    <script>
+        const stationParts = {
+            "station_Kasukabe": {
+                "west_to_platform": {
+                    "barrier_free": {
+                        start: "q1",
+                        flow: {
+                            "q1": { text: "改札に入りましょう", yes: "q2", no: "a1", image: "10_w_1.png" },
+                            "a1": { text: "早く入りましょう", yes: "q1", no: "end" },
+                            "q2": { text: "左に進みましょう", yes: "q3", no: "a2", image: "10_w_2.png" },
+                            "a2": { text: "右に進むと遠回りになってしまいます", yes: "q2", no: "end" },
+                            "q3": { text: "分岐では右に進んでください", yes: "q4", no: "a3", image: "10_w_3.png" },
+                            "a3": { text: "階段は大変でしょう？<br>右に進んでください", yes: "q3", no: "end" },
+                            "q4": { text: "エレベーターに乗りましょう", yes: "q5", no: "a4", image: "10_w_4.png" },
+                            "a4": { text: "電車に乗り遅れてしまいます<br>早く乗りましょう", yes: "q4", no: "end" },
+                            "q5": { text: "2階へ行きましょう", yes: "q6", no: "a5", image: "10_w_5.png" },
+                            "a5": { text: "早く行きましょう", yes: "q5", no: "end" },
+                            "q6": { text: "エレベーターを降りたら、左に進みましょう", yes: "q7", no: "a6", image: "10_w_6.png" },
+                            "a6": { text: "立ち止まっていては迷惑です<br>早く進んでください", yes: "q6", no: "end" },
+                            "q7": { text: "最初の分岐で左に曲がってください", yes: "jump_to_arrival", no: "a7", image: "10_w_7.png" },
+                            "a7": { text: "立ち止まっていては迷惑です<br>早く曲がってください", yes: "q7", no: "end" }
+                        }
+                    }
+                }
+            },
+            "station_Omiya": {
+                "platform_to_main": {
+                    "barrier_free": {
+                        start: "q8",
+                        flow: {
+                            "q8": { text: "エレベーターに乗りましょう", yes: "q9", no: "a8", image: "10_1.png" },
+                            "a8": { text: "電車に乗り遅れてしまいます<br>早く乗りましょう", yes: "q8", no: "end" },
+                            "q9": { text: "１階に行きましょう", yes: "q10", no: "a9", image: "10_2.png" },
+                            "a9": { text: "早くいきましょう", yes: "q9", no: "end" },
+                            "q10": { text: "エレベーターを降りたら、左に進みましょう", yes: "q11", no: "a10", image: "10_3.png" },
+                            "a10": { text: "立ち止まっていては迷惑です<br>早く進んでください", yes: "q10", no: "end" },
+                            "q11": { text: "分岐で右に進んでください", yes: "q12", no: "a11", image: "10_4.png" },
+                            "a11": { text: "立ち止まっていては迷惑です<br>早く進んでください", yes: "q11", no: "end" },
+                            "q12": { text: "次の分岐では直進してください", yes: "q13", no: "a12", image: "10_5.png" },
+                            "a12": { text: "立ち止まっていては迷惑です<br>早く進んでください", yes: "q12", no: "end" },
+                            "q13": { text: "画像の場所から電車に乗ってください", yes: "q14", no: "a13", image: "10_6.png" },
+                            "a13": { text: "場所を間違えてしまいましたか？<br>画像をよく確認してみましょう", yes: "q13", no: "end" },
+                            "q14": { text: "右奥にスペースがあります", yes: "q15", no: "a14", image: "rs.png" },
+                            "a14": { text: "もしかして手前側でしたか？<br>戻って「はい」を押してください", yes: "q14", no: "end" },
+                            "q15": { text: "どちらに着きましたか？", yes: "q16_1", no: "q16_2", yes_text: "１番線", no_text:"２番線" },
+                            "q16_1": { text: "電車を降りたら右に進んでください", yes: "q17", no: "a16_1", image: "a1_fk_1.1.png" },
+                            "a16_1": { text: "立ち止まっていては迷惑です<br>早く進んでください", yes: "q16_1", no: "end" },
+                            "q16_2": { text: "電車を降りたら左に進んでください", yes: "q17", no: "a16_2", image: "a1_fk_1.2.png" },
+                            "a16_2": { text: "立ち止まっていては迷惑です<br>早く進んでください", yes: "q16_2", no: "end" },
+                            "q17": { text: "正面に見えてくるのが改札です<br>お疲れさまでした！", yes: "end", no: "end", image: "a1_fk_2.png" }
+                        }
+                    }
+                }
+            }
+        };
+
+        const stationOptions = [
+            { value: "station_Omiya", text: "大宮駅", exits: [{v:"main", t:"改札"}] },
+            { value: "station_Kasukabe", text: "春日部駅", exits: [{v:"west", t:"西口"}, {v:"east", t:"東口"}] }
+        ];
+
+        let currentFlowData = {}; 
+        let currentKey = "";
+        let history = [];
+        let arrivalPartData = null; 
+
+        function init() {
+            const startS = document.getElementById('start-station-select');
+            const endS = document.getElementById('end-station-select');
+            startS.add(new Option("-- 出発駅 --", ""));
+            endS.add(new Option("-- 到着駅 --", ""));
+            stationOptions.forEach(s => {
+                startS.add(new Option(s.text, s.value));
+                endS.add(new Option(s.text, s.value));
+            });
+        }
+
+        function updateExits(selectId, targetId) {
+            const val = document.getElementById(selectId).value;
+            const target = document.getElementById(targetId);
+            target.innerHTML = '<option value="">-- 改札 --</option>';
+            target.disabled = !val;
+            if(val) stationOptions.find(s => s.value === val).exits.forEach(e => target.add(new Option(e.t, e.v)));
+        }
+
+        document.getElementById('start-station-select').onchange = () => updateExits('start-station-select', 'start-exit-select');
+        document.getElementById('end-station-select').onchange = () => updateExits('end-station-select', 'end-exit-select');
+
+        function startGuidance() {
+            const sId = document.getElementById('start-station-select').value;
+            const sEx = document.getElementById('start-exit-select').value;
+            const eId = document.getElementById('end-station-select').value;
+            const eEx = document.getElementById('end-exit-select').value;
+            const rType = document.querySelector('input[name="route_type"]:checked').value;
+
+            if(!sId || !eId || sId === eId || !sEx || !eEx) {
+                alert("駅と改札を正しく選択してください");
+                return;
+            }
+
+            const startPart = stationParts[sId][`${sEx}_to_platform`][rType];
+            arrivalPartData = stationParts[eId][`platform_to_${eEx}`][rType];
+
+            currentFlowData = startPart.flow;
+            currentKey = startPart.start;
+            
+            document.getElementById('initial-selection').style.display = 'none';
+            document.getElementById('guidance-area').style.display = 'block';
+            updateDisplay();
+        }
+
+        function updateDisplay() {
+            const step = currentFlowData[currentKey];
+            document.getElementById('question').innerHTML = step.text;
+            
+            const img = document.getElementById('route-image');
+            const container = document.getElementById('image-container');
+            if(step.image) {
+                img.src = `images/${step.image}`;
+                container.style.display = "flex";
+            } else {
+                container.style.display = "none";
+            }
+
+            // --- 変更点：もし最後のステップ(q17)ならFormsボタンを出す ---
+            if (currentKey === "q17") {
+                showArrivalScreen(step.text, step.image);
+            } else {
+                document.getElementById('buttons').innerHTML = `
+                    <div class="answer-row">
+                        <button class="answer-btn" onclick="answer('はい')">${step.yes_text || "はい"}</button>
+                        <button class="answer-btn" onclick="answer('いいえ')">${step.no_text || "いいえ"}</button>
+                    </div>
+                `;
+                document.getElementById('back-btn').style.display = history.length > 0 ? "block" : "none";
+                document.getElementById('reset-btn').style.display = "none";
+            }
+        }
+
+        function answer(res) {
+            const step = currentFlowData[currentKey];
+            const next = (res === 'はい') ? step.yes : step.no;
+
+            if (next === "jump_to_arrival") {
+                history.push({key: currentKey, data: currentFlowData});
+                currentFlowData = arrivalPartData.flow;
+                currentKey = arrivalPartData.start;
+                updateDisplay();
+            } else if (next === "end") {
+                // 通常のフローでendになった場合も到着画面へ
+                showArrivalScreen("目的地に到着しました！<br>お疲れさまでした。");
+            } else {
+                history.push({key: currentKey, data: currentFlowData});
+                currentKey = next;
+                updateDisplay();
+            }
+        }
+
+        // 到着画面を表示する共通関数
+        function showArrivalScreen(msg, imgName) {
+            document.getElementById('question').innerHTML = msg;
+            
+            if(imgName) {
+                document.getElementById('route-image').src = `images/${imgName}`;
+                document.getElementById('image-container').style.display = "flex";
+            }
+
+            // FormsのURL（自分のものに書き換えてください）
+            const formsUrl = "https://forms.office.com/Pages/ResponsePage.aspx?id=8zuF0JP-kEegALNjXNOkiE8bIWV-zcRLqkN1yz0k_WRUNklKUlZHNUpQSFhEMDVIMlpJNVpDR1RWTi4u"; 
+            
+            document.getElementById('buttons').innerHTML = `
+                <a href="${formsUrl}" target="_blank" class="form-link-btn">
+                    Formsはこちら
+                </a>
+            `;
+            document.getElementById('reset-btn').style.display = "block";
+            document.getElementById('back-btn').style.display = "none";
+        }
+
+        function goBack() {
+            if (history.length > 0) {
+                const prev = history.pop();
+                currentKey = prev.key;
+                currentFlowData = prev.data;
+                updateDisplay();
+            }
+        }
+
+        function resetGuidance() { location.reload(); }
+        init();
+    </script>
+</body>
+</html>
